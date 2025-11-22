@@ -277,6 +277,15 @@ def run(
 
                     if len(det):
                         det[:, :4] = scale_boxes(im_batch.shape[2:], det[:, :4], im0.shape).round()
+
+                        ###posiçao de deteccao de erros####
+                        print(f"\n🔍 [DETECÇÃO] Arquivo: {p.name}")
+                        for c in det[:, 5].unique():
+                            n = (det[:, 5] == c).sum()
+                            class_name = names[int(c)]
+                            print(f"   └── Defeito: {class_name:<15} | Qtd: {n}")
+                        print("-" * 40)
+
                         for c in det[:, 5].unique():
                             n = (det[:, 5] == c).sum()
                             s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "
@@ -388,6 +397,15 @@ def run(
 
                                             if len(det):
                                                 det[:, :4] = scale_boxes(im_batch.shape[2:], det[:, :4], im0.shape).round()
+
+                                                ###posiçao de deteccao de erros####
+                                                print(f"\n🔍 [DETECÇÃO] Arquivo: {p.name}")
+                                                for c in det[:, 5].unique():
+                                                    n = (det[:, 5] == c).sum()
+                                                    class_name = names[int(c)]
+                                                    print(f"   └── Defeito: {class_name:<15} | Qtd: {n}")
+                                                print("-" * 40)
+
                                                 for c in det[:, 5].unique():
                                                     n = (det[:, 5] == c).sum()
                                                     s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "
@@ -480,6 +498,15 @@ def run(
 
                     if len(det):
                         det[:, :4] = scale_boxes(im_batch.shape[2:], det[:, :4], im0.shape).round()
+
+                        ###posiçao de deteccao de erros####
+                        print(f"\n🔍 [DETECÇÃO] Arquivo: {p.name}")
+                        for c in det[:, 5].unique():
+                            n = (det[:, 5] == c).sum()
+                            class_name = names[int(c)]
+                            print(f"   └── Defeito: {class_name:<15} | Qtd: {n}")
+                        print("-" * 40)
+
                         for c in det[:, 5].unique():
                             n = (det[:, 5] == c).sum()
                             s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "
