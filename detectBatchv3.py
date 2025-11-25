@@ -65,6 +65,41 @@ from utils.general import (
 )
 from utils.torch_utils import select_device, smart_inference_mode
 
+def save_defect_stats(save_dir, filename, det, names):
+    """
+    Salva a contagem de defeitos em um arquivo CSV acumulativo.
+    Gera colunas: [Arquivo, Defeito_A, Defeito_B, ...]
+    """
+    import csv
+    
+    csv_path = save_dir / 'relatorio_defeitos_qtd.csv'
+    file_exists = csv_path.exists()
+    
+    # 1. Preparar contagem zerada para todas as classes (garante colunas fixas)
+    # names é uma lista ou dict {0: 'scratch', 1: 'dent', ...}
+    class_names = list(names.values()) if isinstance(names, dict) else names
+    counts = {name: 0 for name in class_names}
+    
+    # 2. Contar as ocorrências detectadas
+    if len(det):
+        for c in det[:, 5]:
+            cls_name = names[int(c)]
+            counts[cls_name] += 1
+            
+    # 3. Preparar a linha para o CSV
+    header = ['Nome_Arquivo'] + class_names
+    row = [filename] + [counts[name] for name in class_names]
+    
+    # 4. Escrever no arquivo (modo 'a' para append)
+    try:
+        with open(csv_path, mode='a', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(header) # Escreve cabeçalho se arquivo novo
+            writer.writerow(row)
+    except Exception as e:
+        print(f"Erro ao salvar CSV: {e}")
+
 @smart_inference_mode()
 def run(
     weights=ROOT / "yolov5s.pt",  # model path or triton URL
@@ -275,16 +310,9 @@ def run(
                     imc = im0.copy() if save_crop else im0
                     annotator = Annotator(im0, line_width=line_thickness, example=str(names))
 
+                    save_defect_stats(save_dir, p.name, det, names)  # [MOD] salva estatísticas de defeitos no CSV acumulativo
                     if len(det):
                         det[:, :4] = scale_boxes(im_batch.shape[2:], det[:, :4], im0.shape).round()
-
-                        ###posiçao de deteccao de erros####
-                        print(f"\n🔍 [DETECÇÃO] Arquivo: {p.name}")
-                        for c in det[:, 5].unique():
-                            n = (det[:, 5] == c).sum()
-                            class_name = names[int(c)]
-                            print(f"   └── Defeito: {class_name:<15} | Qtd: {n}")
-                        print("-" * 40)
 
                         for c in det[:, 5].unique():
                             n = (det[:, 5] == c).sum()
@@ -395,17 +423,9 @@ def run(
                                             imc = im0.copy() if save_crop else im0
                                             annotator = Annotator(im0, line_width=line_thickness, example=str(names))
 
+                                            save_defect_stats(save_dir, p.name, det, names)  # [MOD] salva estatísticas de defeitos no CSV acumulativo
                                             if len(det):
                                                 det[:, :4] = scale_boxes(im_batch.shape[2:], det[:, :4], im0.shape).round()
-
-                                                ###posiçao de deteccao de erros####
-                                                print(f"\n🔍 [DETECÇÃO] Arquivo: {p.name}")
-                                                for c in det[:, 5].unique():
-                                                    n = (det[:, 5] == c).sum()
-                                                    class_name = names[int(c)]
-                                                    print(f"   └── Defeito: {class_name:<15} | Qtd: {n}")
-                                                print("-" * 40)
-
                                                 for c in det[:, 5].unique():
                                                     n = (det[:, 5] == c).sum()
                                                     s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "
@@ -495,18 +515,10 @@ def run(
                     gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]
                     imc = im0.copy() if save_crop else im0
                     annotator = Annotator(im0, line_width=line_thickness, example=str(names))
-
+                    
+                    save_defect_stats(save_dir, p.name, det, names)  # [MOD] salva estatísticas de defeitos no CSV acumulativo
                     if len(det):
                         det[:, :4] = scale_boxes(im_batch.shape[2:], det[:, :4], im0.shape).round()
-
-                        ###posiçao de deteccao de erros####
-                        print(f"\n🔍 [DETECÇÃO] Arquivo: {p.name}")
-                        for c in det[:, 5].unique():
-                            n = (det[:, 5] == c).sum()
-                            class_name = names[int(c)]
-                            print(f"   └── Defeito: {class_name:<15} | Qtd: {n}")
-                        print("-" * 40)
-
                         for c in det[:, 5].unique():
                             n = (det[:, 5] == c).sum()
                             s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "
@@ -603,6 +615,7 @@ def run(
                     imc = im0.copy() if save_crop else im0
                     annotator = Annotator(im0, line_width=line_thickness, example=str(names))
 
+                    save_defect_stats(save_dir, p.name, det, names)  # [MOD] salva estatísticas de defeitos no CSV acumulativo
                     if len(det):
                         det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], im0.shape).round()
                         for c in det[:, 5].unique():
