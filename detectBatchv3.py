@@ -133,6 +133,7 @@ def run(
     vid_stride=1,  # video frame-rate stride
     batch_size=1,  # batch size
     workers=4,  # number of dataloader workers
+    prepoc_queue_size=12,  # tamanho da fila de pré-processamento em modo assíncrono
 ):
     # ----------------------------------------------------------
     # 🔧 CONFIGURAÇÕES INICIAIS (original)
@@ -168,7 +169,7 @@ def run(
     elif screenshot:
         dataset = LoadScreenshots(source, img_size=imgsz, stride=stride, auto=pt)
     else:
-        dataset = LoadImages(source, img_size=imgsz, stride=stride, auto=pt, vid_stride=vid_stride)
+        dataset = LoadImages(source, img_size=imgsz, stride=stride, auto=None, vid_stride=vid_stride)
     vid_path, vid_writer = [None] * bs, [None] * bs
 
     # ----------------------------------------------------------
@@ -208,7 +209,7 @@ def run(
     if workers > 0:
         executor = ThreadPoolExecutor(max_workers=max_workers)  # [MOD]
         # buffer/queue para comunicação entre produtor e consumidor
-        preproc_queue = Queue.Queue(maxsize=64)  # [MOD] limite para evitar encher memória
+        preproc_queue = Queue.Queue(maxsize=prepoc_queue_size)  # [MOD] limite para evitar encher memória
 
     # função de pré-processamento (unificada) -> usada tanto pelo producer quanto no modo webcam/vídeo
     def preprocess_image(im):  # [MOD]
@@ -225,6 +226,15 @@ def run(
         try:
             for path, im, im0s, vid_cap, s in dataset:
                 # só produz pré-processamento para modo image + batch_size>1
+                _, h_new, w_new = im.shape      # Target size (e.g., 2048, 2048)
+                h_orig, w_orig = im0s.shape[:2] # Original size
+
+                if h_new != h_orig or w_new != w_orig:
+                    # You can use print or the YOLO LOGGER
+                    LOGGER.warning(f"⚠️  RESIZED: {Path(path).name} | Original: {w_orig}x{h_orig} -> Model Input: {w_new}x{h_new}")
+                # --- NEW CODE END ---
+                
+                
                 if not webcam and getattr(dataset, "mode", "") == "image" and batch_size > 1:
                     fut = executor.submit(preprocess_image, im)
                     # bloco se fila cheia (backpressure)
@@ -704,6 +714,8 @@ def run(
         LOGGER.info(f"Results saved to {colorstr('bold', save_dir)}{s}")
     if update:
         strip_optimizer(weights[0])
+        
+    return save_path
 
 
 def parse_opt():
