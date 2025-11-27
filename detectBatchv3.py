@@ -135,6 +135,7 @@ def run(
     batch_size=1,  # batch size
     workers=4,  # number of dataloader workers
     preproc_queue_size_multiplier=1,  # tamanho da fila de pré-processamento em modo assíncrono
+    subset_pct: float = 1.0,
 ):
     # ----------------------------------------------------------
     # 🔧 CONFIGURAÇÕES INICIAIS (original)
@@ -170,7 +171,7 @@ def run(
     elif screenshot:
         dataset = LoadScreenshots(source, img_size=imgsz, stride=stride, auto=pt)
     else:
-        dataset = LoadImages(source, img_size=imgsz, stride=stride, auto=None, vid_stride=vid_stride)
+        dataset = LoadImages(source, img_size=imgsz, stride=stride, auto=None, vid_stride=vid_stride, subset_pct=subset_pct)
     vid_path, vid_writer = [None] * bs, [None] * bs
 
     # ----------------------------------------------------------
@@ -819,6 +820,12 @@ def parse_opt():
     parser.add_argument("--vid-stride", type=int, default=1, help="video frame-rate stride")
     parser.add_argument("--batch-size", type=int, default=1, help="batch size")
     parser.add_argument("--workers", type=int, default=4, help="number of dataloader workers")
+    parser.add_argument(
+        "--subset-pct",
+        type=float,
+        default=1.0,
+        help="fraction of images to use from the dataset for detection (0.0-1.0)",
+    )
     opt = parser.parse_args()
     opt.imgsz *= 2 if len(opt.imgsz) == 1 else 1  # expand
     print_args(vars(opt))

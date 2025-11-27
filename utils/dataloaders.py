@@ -175,12 +175,17 @@ def create_dataloader(
     prefix="",
     shuffle=False,
     seed=0,
+    subset_pct: float = 1.0,
 ):
     """Creates and returns a configured DataLoader instance for loading and processing image datasets."""
     if rect and shuffle:
         LOGGER.warning("WARNING ⚠️ --rect is incompatible with DataLoader shuffle, setting shuffle=False")
         shuffle = False
     with torch_distributed_zero_first(rank):  # init dataset *.cache only once if DDP
+        # allow subset selection via explicit param or via hyp['test_subset_pct'] (hyper-parameter)
+        if subset_pct is None and hyp is not None:
+            subset_pct = float(hyp.get("test_subset_pct", 1.0))
+
         dataset = LoadImagesAndLabels(
             path,
             imgsz,
@@ -195,6 +200,7 @@ def create_dataloader(
             image_weights=image_weights,
             prefix=prefix,
             rank=rank,
+            subset_pct=subset_pct,
         )
 
     batch_size = min(batch_size, len(dataset))
@@ -322,7 +328,7 @@ class LoadScreenshots:
 class LoadImages:
     """YOLOv5 image/video dataloader, i.e. `python detect.py --source image.jpg/vid.mp4`."""
 
-    def __init__(self, path, img_size=640, stride=32, auto=True, transforms=None, vid_stride=1):
+    def __init__(self, path, img_size=640, stride=32, auto=True, transforms=None, vid_stride=1, subset_pct: float = 1.0):
         """Initializes YOLOv5 loader for images/videos, supporting glob patterns, directories, and lists of paths."""
         if isinstance(path, str) and Path(path).suffix == ".txt":  # *.txt file with img/vid/dir on each line
             path = Path(path).read_text().rsplit()
@@ -340,11 +346,23 @@ class LoadImages:
 
         images = [x for x in files if x.split(".")[-1].lower() in IMG_FORMATS]
         videos = [x for x in files if x.split(".")[-1].lower() in VID_FORMATS]
+        # Optionally sample subset of sources for faster/limited testing
+        if subset_pct is None:
+            subset_pct = 1.0
+        if 0.0 < float(subset_pct) < 1.0:
+            total = images + videos
+            keep_n = max(1, int(len(total) * float(subset_pct)))
+            rng = random.Random(0)  # deterministic sampling
+            keep = set(rng.sample(range(len(total)), keep_n))
+            total_subset = [p for i, p in enumerate(total) if i in keep]
+            images = [x for x in total_subset if x.split(".")[-1].lower() in IMG_FORMATS]
+            videos = [x for x in total_subset if x.split(".")[-1].lower() in VID_FORMATS]
         ni, nv = len(images), len(videos)
 
         self.img_size = img_size
         self.stride = stride
         self.files = images + videos
+        ni, nv = len(images), len(videos)
         self.nf = ni + nv  # number of files
         self.video_flag = [False] * ni + [True] * nv
         self.mode = "image"
@@ -557,6 +575,7 @@ class LoadImagesAndLabels(Dataset):
         prefix="",
         rank=-1,
         seed=0,
+        subset_pct: float = 1.0,
     ):
         """Initializes the YOLOv5 dataset loader, handling images and their labels, caching, and preprocessing."""
         self.img_size = img_size
@@ -619,6 +638,28 @@ class LoadImagesAndLabels(Dataset):
         self.shapes = np.array(shapes)
         self.im_files = list(cache.keys())  # update
         self.label_files = img2label_paths(cache.keys())  # update
+
+        # Optionally select a subset of images (useful for scalability/quick tests)
+        if subset_pct is None:
+            subset_pct = 1.0
+        if 0.0 < float(subset_pct) < 1.0:
+            n_all = len(self.im_files)
+            keep_n = max(1, int(n_all * float(subset_pct)))
+            rng = np.random.RandomState(seed)
+            keep_idx = rng.choice(n_all, size=keep_n, replace=False)
+            keep_idx = np.sort(keep_idx)
+            self.im_files = [self.im_files[i] for i in keep_idx]
+            self.label_files = [self.label_files[i] for i in keep_idx]
+            # also subset labels/shapes/segments arrays read from cache
+            try:
+                self.labels = [self.labels[i] for i in keep_idx]
+                self.shapes = self.shapes[keep_idx]
+                self.segments = [self.segments[i] for i in keep_idx]
+            except Exception:
+                # if any of these are not set as expected, ignore and continue
+                pass
+            # if cache had been created for all images, filter labels/shapes/segments accordingly
+            # labels, shapes, segments will be replaced after reading cache items below
 
         # Filter images
         if min_items:
