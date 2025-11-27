@@ -36,6 +36,7 @@ import sys
 from pathlib import Path
 
 import torch
+import time
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -104,7 +105,7 @@ def save_defect_stats(save_dir, filename, det, names):
 def run(
     weights=ROOT / "yolov5s.pt",  # model path or triton URL
     source=ROOT / "data/images",  # file/dir/URL/glob/screen/0(webcam)
-    data=ROOT / "data/coco128.yaml",  # dataset.yaml path
+    data=ROOT / "data/CSDD.yaml",  # dataset.yaml path
     imgsz=(640, 640),  # inference size (height, width)
     conf_thres=0.25,  # confidence threshold
     iou_thres=0.45,  # NMS IOU threshold
@@ -133,7 +134,7 @@ def run(
     vid_stride=1,  # video frame-rate stride
     batch_size=1,  # batch size
     workers=4,  # number of dataloader workers
-    prepoc_queue_size=12,  # tamanho da fila de pré-processamento em modo assíncrono
+    preproc_queue_size_multiplier=1,  # tamanho da fila de pré-processamento em modo assíncrono
 ):
     # ----------------------------------------------------------
     # 🔧 CONFIGURAÇÕES INICIAIS (original)
@@ -191,6 +192,8 @@ def run(
     # ----------------------------------------------------------
     model.warmup(imgsz=(1 if pt or model.triton else bs, 3, *imgsz))
     seen, windows, dt = 0, [], (Profile(device=device), Profile(device=device), Profile(device=device))
+    # iniciar timer de execução
+    start_time = time.time()
 
     # ----------------------------------------------------------
     # [MOD] Setup para paralelismo (producer-consumer + ThreadPoolExecutor)
@@ -209,7 +212,7 @@ def run(
     if workers > 0:
         executor = ThreadPoolExecutor(max_workers=max_workers)  # [MOD]
         # buffer/queue para comunicação entre produtor e consumidor
-        preproc_queue = Queue.Queue(maxsize=prepoc_queue_size)  # [MOD] limite para evitar encher memória
+        preproc_queue = Queue.Queue(maxsize=batch_size*preproc_queue_size_multiplier)  # [MOD] limite para evitar encher memória
 
     # função de pré-processamento (unificada) -> usada tanto pelo producer quanto no modo webcam/vídeo
     def preprocess_image(im):  # [MOD]
@@ -714,7 +717,24 @@ def run(
         LOGGER.info(f"Results saved to {colorstr('bold', save_dir)}{s}")
     if update:
         strip_optimizer(weights[0])
-        
+    # calcular tempo total de execução e salvar resumo em CSV
+    try:
+        elapsed = time.time() - start_time
+    except Exception:
+        elapsed = None
+
+
+    summary_csv = "run_summary.csv"
+    try:
+        file_exists = os.path.exists(summary_csv)
+        with open(summary_csv, mode="a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(["tempo_execucao_s", "workers", "batch_size", "imagens_testadas"])
+            writer.writerow([f"{elapsed:.6f}" if elapsed is not None else "", workers, batch_size, seen])
+    except Exception as e:
+        LOGGER.warning(f"Falha ao salvar resumo de execução em {summary_csv}: {e}")
+
     return save_path
 
 
